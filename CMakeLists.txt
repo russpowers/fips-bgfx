@@ -232,7 +232,15 @@ endif()
 fips_begin_lib(bgfx-examples-common)
     include_directories(bgfx/3rdparty/dxsdk/include)
     add_definitions(-D__STDC_CONSTANT_MACROS -D__STDC_LIMIT_MACROS -D__STDC_FORMAT_MACROS)
-    fips_src(bgfx/examples/common GROUP ".")
+    fips_src(bgfx/examples/common/debugdraw GROUP "debugdraw")
+    bgfx_shaders(FILES
+        fs_debugdraw_fill.sc vs_debugdraw_fill.sc
+        fs_debugdraw_fill_lit.sc vs_debugdraw_fill_lit.sc
+        fs_debugdraw_lines.sc vs_debugdraw_lines.sc
+        fs_debugdraw_lines_stipple.sc vs_debugdraw_lines_stipple.sc
+    )
+    fips_files(varying.def.sc)
+
     fips_src(bgfx/examples/common/imgui GROUP "imgui")
     bgfx_shaders(FILES
         fs_imgui_color.sc   vs_imgui_color.sc
@@ -278,6 +286,8 @@ fips_begin_lib(bgfx-examples-common)
     else()
         fips_files(entry_qnx.cpp entry_sdl.cpp entry_winrt.cpp)
     endif()
+
+    fips_src(bgfx/examples/common GROUP ".")
 fips_end_lib()
 
 #-[ Samples ]-------------------------------------------------------------------
