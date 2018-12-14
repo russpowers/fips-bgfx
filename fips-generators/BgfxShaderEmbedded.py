@@ -25,6 +25,7 @@ os_name = platform.system().lower()
 extension = ""
 proj_path = os.path.normpath('{}/..'.format(os.path.dirname(os.path.abspath(__file__))))
 items = settings.load(proj_path)
+shaderc_path = ""
 if not items:
     items = {'config': settings.get_default('config')}
 
@@ -33,22 +34,22 @@ if not items:
 if os_name == "windows":
     extension = ".exe"
 
-deploy_path = util.get_deploy_dir("../fips", "fips-bgfx", {'name': items['config']})
+#deploy_path = util.get_deploy_dir("../fips", "fips-bgfx", {'name': items['config']})
 
 #-------------------------------------------------------------------------------
-def get_shaderc_path() :
-    """find shaderc compiler, fail if not exists"""
+# def get_shaderc_path() :
+#     """find shaderc compiler, fail if not exists"""
 
-    shaderc_path = os.path.abspath('{}/shaderc{}'.format(deploy_path, extension))
-    if not os.path.isfile(shaderc_path) :
-        os_name = platform.system().lower()
-        shaderc_path = '{}/bgfx/tools/bin/{}/shaderc{}'.format(proj_path, os_name, extension)
-        shaderc_path = os.path.normpath(shaderc_path)
+#     shaderc_path = os.path.abspath('{}/shaderc{}'.format(deploy_path, extension))
+#     if not os.path.isfile(shaderc_path) :
+#         os_name = platform.system().lower()
+#         shaderc_path = '{}/bgfx/tools/bin/{}/shaderc{}'.format(proj_path, os_name, extension)
+#         shaderc_path = os.path.normpath(shaderc_path)
         
-        if not os.path.isfile(shaderc_path) :
-            log.error("bgfx shaderc executable not found, please run 'make tools' in bgfx directory: ", shaderc_path)
+#         if not os.path.isfile(shaderc_path) :
+#             log.error("bgfx shaderc executable not found, please run 'make tools' in bgfx directory: ", shaderc_path)
 
-    return shaderc_path
+#     return shaderc_path
 
 #-------------------------------------------------------------------------------
 def get_include_path() :
@@ -66,7 +67,7 @@ def get_basename(input_path) :
 #-------------------------------------------------------------------------------
 def run_shaderc(input_file, out_tmp, platform, shader_type, subtype, bin_name) :
     cmd = [
-        get_shaderc_path(),
+        shaderc_path,
         '-i', get_include_path(),
         '--platform', platform,
         '--type', shader_type
@@ -97,10 +98,10 @@ class BuildShaderTask(Thread):
 
     def run(self):
         if os_name == 'windows' and self.fmt == 'dx9' and self.shader_type == 'compute':
-            self.contents = "// dx9 do not have compute\n"
+            self.contents = "// dx9 does not have compute\n"
         elif os_name != 'windows' and self.fmt in ['dx9','dx11']:
             self.contents  = ""
-            self.contents += "// built on {}, hlsl compiler not disponible\n".format(os_name)
+            self.contents += "// built on {}, hlsl compiler not possible\n".format(os_name)
             self.contents += "static const uint8_t {}_{}[1] = {{ 0 }};\n\n".format(self.basename, self.fmt)
         else:
             out_file = tempfile.mktemp(prefix='bgfx_'+self.fmt+'_shaderc_')
@@ -113,12 +114,15 @@ class BuildShaderTask(Thread):
 
 
 #-------------------------------------------------------------------------------
-def generate(input_file, out_src, out_hdr) :
+def generate(input_file, out_src, out_hdr, args) :
     """
     :param input:       bgfx .sc file
     :param out_src:     must be None
     :param out_hdr:     path of output header file
     """
+    global shaderc_path
+    shaderc_path = args['shadercPath']
+
     if not os.path.isfile(out_hdr) or genutil.isDirty(Version, [input_file], [out_hdr]):
         # deduce shader type
         base_file = os.path.basename(input_file)
@@ -135,29 +139,41 @@ def generate(input_file, out_src, out_hdr) :
             return
 
         # source to bgfx shader compiler
-        shaderc_path = get_shaderc_path()
+        #shaderc_path = get_shaderc_path()
         include_path = get_include_path()
         basename = get_basename(input_file)
 
-        glsl = BuildShaderTask(input_file, 'glsl', 'linux', shader_type, None, basename)
+
+        emsc = BuildShaderTask(input_file, 'glsl', 'asm.js', shader_type, None, basename)
+        
+        android = BuildShaderTask(input_file, 'glsl', 'android', shader_type, None, basename)
         mtl = BuildShaderTask(input_file, 'mtl', 'ios', shader_type, None, basename)
+
         dx9 = BuildShaderTask(input_file, 'dx9', 'windows', shader_type,
                 'vs_3_0' if shader_type == 'vertex' else 'ps_3_0', basename)
         dx11 = BuildShaderTask(input_file, 'dx11', 'windows', shader_type,
                 'vs_4_0' if shader_type == 'vertex' else 
                 'cs_5_0' if shader_type == 'compute' else 'ps_4_0', basename)
+        linux = BuildShaderTask(input_file, 'glsl', 'linux', shader_type, None, basename)
+        osx = BuildShaderTask(input_file, 'glsl', 'osx', shader_type, None, basename)
 
-        glsl.start()
+        emsc.start()
+        android.start()
         mtl.start()
         dx9.start()
         dx11.start()
+        linux.start()
+        osx.start()
 
-        glsl.join()
+        emsc.join()
+        android.join()
         mtl.join()
         dx9.join()
         dx11.join()
+        linux.join()
+        osx.join()
 
-        contents = glsl.contents + mtl.contents + dx9.contents + dx11.contents
+        contents = emsc.contents + android.contents + mtl.contents + dx9.contents + dx11.contents + linux.contents + osx.contents
         if len(contents):
             with open(out_hdr, 'w') as f:
                 contents = "// #version:{}#\n".format(Version) + contents
